@@ -471,6 +471,12 @@ dp_packet_set_l2_5(struct dp_packet *b, void *l2_5)
                   : UINT16_MAX;
 }
 
+static inline void
+dp_packet_reset_l2_5(struct dp_packet *b)
+{
+    b->l2_5_ofs = UINT16_MAX;
+}
+
 static inline void *
 dp_packet_l3(const struct dp_packet *b)
 {

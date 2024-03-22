@@ -464,7 +464,7 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
 
         set_ethertype(packet, ethtype);
         if (get_16aligned_be32(&mh->mpls_lse) & htonl(MPLS_BOS_MASK)) {
-            dp_packet_set_l2_5(packet, NULL);
+            dp_packet_reset_l2_5(packet);
         }
         /* Shift the l2 header forward. */
         memmove((char*)dp_packet_data(packet) + MPLS_HLEN, dp_packet_data(packet), len);
