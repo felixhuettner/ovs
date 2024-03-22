@@ -176,6 +176,8 @@ struct dp_packet {
     ovs_be32 packet_type;          /* Packet type as defined in OpenFlow */
     uint16_t csum_start;           /* Position to start checksumming from. */
     uint16_t csum_offset;          /* Offset to place checksum. */
+    bool     offset_valid;         /* If the offsets are still valid or have
+                                    * been invalidated. */
     union {
         struct pkt_metadata md;
         uint64_t data[DP_PACKET_CONTEXT_SIZE / 8];
@@ -440,6 +442,7 @@ dp_packet_reset_offsets(struct dp_packet *b)
     b->l4_ofs = UINT16_MAX;
     b->inner_l3_ofs = UINT16_MAX;
     b->inner_l4_ofs = UINT16_MAX;
+    b->offset_valid = false;
 }
 
 static inline uint16_t
@@ -1024,6 +1027,7 @@ dp_packet_batch_init_packet_fields(struct dp_packet_batch *batch)
     DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
         dp_packet_reset_cutlen(packet);
         packet->packet_type = htonl(PT_ETH);
+        dp_packet_reset_offsets(packet);
     }
 }
 

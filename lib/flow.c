@@ -856,7 +856,6 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
 
     /* Initialize packet's layer pointer and offsets. */
     frame = data;
-    dp_packet_reset_offsets(packet);
 
     if (packet_type == htonl(PT_ETH)) {
         /* Must have full Ethernet header to proceed. */
@@ -893,13 +892,23 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         int count;
         const void *mpls = data;
 
-        packet->l2_5_ofs = (char *)data - frame;
+        uint16_t l2_5_ofs = (char *)data - frame;
+        if (packet->offset_valid) {
+            ovs_assert(packet->l2_5_ofs == l2_5_ofs);
+        } else {
+            packet->l2_5_ofs = l2_5_ofs;
+        }
         count = parse_mpls(&data, &size);
         miniflow_push_words_32(mf, mpls_lse, mpls, count);
     }
 
     /* Network layer. */
-    packet->l3_ofs = (char *)data - frame;
+    uint16_t l3_ofs = (char *)data - frame;
+    if (packet->offset_valid) {
+        ovs_assert(packet->l3_ofs == l3_ofs);
+    } else {
+        packet->l3_ofs = l3_ofs;
+    }
 
     nw_frag = 0;
     if (OVS_LIKELY(dl_type == htons(ETH_TYPE_IP))) {
@@ -1030,7 +1039,12 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         goto out;
     }
 
-    packet->l4_ofs = (char *)data - frame;
+    uint16_t l4_ofs = (char *)data - frame;
+    if (packet->offset_valid) {
+        ovs_assert(packet->l4_ofs == l4_ofs);
+    } else {
+        packet->l4_ofs = l4_ofs;
+    }
     miniflow_push_be32(mf, nw_frag,
                        bytes_to_be32(nw_frag, nw_tos, nw_ttl, nw_proto));
 
