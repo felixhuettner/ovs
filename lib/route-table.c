@@ -47,27 +47,6 @@ VLOG_DEFINE_THIS_MODULE(route_table);
 
 COVERAGE_DEFINE(route_table_dump);
 
-struct route_data {
-    /* Copied from struct rtmsg. */
-    unsigned char rtm_dst_len;
-    bool local;
-
-    /* Extracted from Netlink attributes. */
-    struct in6_addr rta_dst; /* 0 if missing. */
-    struct in6_addr rta_prefsrc; /* 0 if missing. */
-    struct in6_addr rta_gw;
-    char ifname[IFNAMSIZ]; /* Interface name. */
-    uint32_t mark;
-};
-
-/* A digested version of a route message sent down by the kernel to indicate
- * that a route has changed. */
-struct route_table_msg {
-    bool relevant;        /* Should this message be processed? */
-    int nlmsg_type;       /* e.g. RTM_NEWROUTE, RTM_DELROUTE. */
-    struct route_data rd; /* Data parsed from this message. */
-};
-
 static struct ovs_mutex route_table_mutex = OVS_MUTEX_INITIALIZER;
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
 
@@ -84,7 +63,8 @@ static struct nln_notifier *name_notifier = NULL;
 static bool route_table_valid = false;
 
 static void route_table_reset(void);
-static void route_table_handle_msg(const struct route_table_msg *);
+static void route_table_handle_msg(const struct route_table_msg *,
+                                   void *);
 static int route_table_parse_ns(struct ofpbuf *, void *change,
                                 const char *netns);
 static void route_table_change(const struct route_table_msg *, void *);
@@ -156,8 +136,9 @@ route_table_wait(void)
     ovs_mutex_unlock(&route_table_mutex);
 }
 
-static bool
-route_table_dump_one_table(const char *netns, unsigned char id)
+bool
+route_table_dump_one_table(char *netns, uint32_t id,
+                           route_table_dump_callback_t handle_msg, void *data)
 {
     uint64_t reply_stub[NL_DUMP_BUFSIZE / 8];
     struct ofpbuf request, reply, buf;
@@ -171,7 +152,9 @@ route_table_dump_one_table(const char *netns, unsigned char id)
 
     rq_msg = ofpbuf_put_zeros(&request, sizeof *rq_msg);
     rq_msg->rtm_family = AF_UNSPEC;
-    rq_msg->rtm_table = id;
+    rq_msg->rtm_table = RT_TABLE_UNSPEC;
+
+    nl_msg_put_u32(&request, RTA_TABLE, id);
 
     nl_ns_dump_start(netns, &dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
@@ -187,7 +170,7 @@ route_table_dump_one_table(const char *netns, unsigned char id)
             if (!(nlmsghdr->nlmsg_flags & NLM_F_DUMP_FILTERED)) {
                 filtered = false;
             }
-            route_table_handle_msg(&msg);
+            (*handle_msg)(&msg, data);
         }
     }
     ofpbuf_uninit(&buf);
@@ -213,7 +196,9 @@ route_table_reset(void)
     COVERAGE_INC(route_table_dump);
 
     for (size_t i = 0; i < ARRAY_SIZE(tables); i++) {
-        if (!route_table_dump_one_table(NULL, tables[i])) {
+        if (!route_table_dump_one_table(NULL, tables[i],
+                                        route_table_handle_msg,
+                                        NULL)) {
             /* Got unfiltered reply, no need to dump further. */
             break;
         }
@@ -236,6 +221,7 @@ route_table_parse_ns(struct ofpbuf *buf, void *change_,
         [RTA_MARK] = { .type = NL_A_U32, .optional = true },
         [RTA_PREFSRC] = { .type = NL_A_U32, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
+        [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
     };
 
     static const struct nl_policy policy6[] = {
@@ -245,6 +231,7 @@ route_table_parse_ns(struct ofpbuf *buf, void *change_,
         [RTA_GATEWAY] = { .type = NL_A_IPV6, .optional = true },
         [RTA_PREFSRC] = { .type = NL_A_IPV6, .optional = true },
         [RTA_TABLE] = { .type = NL_A_U32, .optional = true },
+        [RTA_PRIORITY] = { .type = NL_A_U32, .optional = true },
     };
 
     struct nlattr *attrs[ARRAY_SIZE(policy)];
@@ -293,11 +280,14 @@ route_table_parse_ns(struct ofpbuf *buf, void *change_,
             && table_id != RT_TABLE_MAIN
             && table_id != RT_TABLE_LOCAL) {
             change->relevant = false;
-        }
+         }
+        change->rd.rta_table_id = table_id;
 
         change->nlmsg_type     = nlmsg->nlmsg_type;
         change->rd.rtm_dst_len = rtm->rtm_dst_len + (ipv4 ? 96 : 0);
         change->rd.local = rtm->rtm_type == RTN_LOCAL;
+        change->rd.plen = rtm->rtm_dst_len;
+        change->rd.rtm_protocol = rtm->rtm_protocol;
         if (attrs[RTA_OIF]) {
             rta_oif = nl_attr_get_u32(attrs[RTA_OIF]);
 
@@ -347,6 +337,9 @@ route_table_parse_ns(struct ofpbuf *buf, void *change_,
         if (attrs[RTA_MARK]) {
             change->rd.mark = nl_attr_get_u32(attrs[RTA_MARK]);
         }
+        if (attrs[RTA_PRIORITY]) {
+            change->rd.rta_priority = nl_attr_get_u32(attrs[RTA_PRIORITY]);
+        }
     } else {
         VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
         return 0;
@@ -366,7 +359,8 @@ route_table_change(const struct route_table_msg *change OVS_UNUSED,
 }
 
 static void
-route_table_handle_msg(const struct route_table_msg *change)
+route_table_handle_msg(const struct route_table_msg *change,
+                       void *data OVS_UNUSED)
 {
     if (change->relevant && change->nlmsg_type == RTM_NEWROUTE) {
         const struct route_data *rd = &change->rd;
