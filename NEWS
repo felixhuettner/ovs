@@ -1,5 +1,8 @@
 Post-v3.4.0
 --------------------
+   - libopenvswitch API change:
+     * Add nl_ns_transact, nl_ns_transact_multiple and nl_ns_dump_start to
+       open netlink sockets in other network namespaces.
 
 
 v3.4.0 - 15 Aug 2024

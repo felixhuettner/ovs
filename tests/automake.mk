@@ -178,7 +178,8 @@ SYSTEM_TESTSUITE_AT = \
 	tests/system-layer3-tunnels.at \
 	tests/system-traffic.at \
 	tests/system-ipsec.at \
-	tests/system-interface.at
+	tests/system-interface.at \
+	tests/system-library.at
 
 SYSTEM_OFFLOADS_TESTSUITE_AT = \
 	tests/system-common-macros.at \
@@ -500,6 +501,7 @@ if LINUX
 tests_ovstest_SOURCES += \
 	tests/test-netlink-conntrack.c \
 	tests/test-netlink-policy.c \
+	tests/test-netlink-socket.c \
 	tests/test-psample.c
 endif
 
