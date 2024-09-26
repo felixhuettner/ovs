@@ -85,7 +85,8 @@ static bool route_table_valid = false;
 
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *);
-static int route_table_parse(struct ofpbuf *, void *change);
+static int route_table_parse_ns(struct ofpbuf *, void *change,
+                                const char *netns);
 static void route_table_change(const struct route_table_msg *, void *);
 static void route_map_clear(void);
 
@@ -110,7 +111,7 @@ route_table_init(void)
     ovs_assert(!route6_notifier);
 
     ovs_router_init();
-    nln = nln_create(NETLINK_ROUTE, route_table_parse, &rtmsg);
+    nln = nln_create(NULL, NETLINK_ROUTE, route_table_parse_ns, &rtmsg);
 
     route_notifier =
         nln_notifier_create(nln, RTNLGRP_IPV4_ROUTE,
@@ -179,7 +180,7 @@ route_table_dump_one_table(const char *netns, unsigned char id)
     while (nl_dump_next(&dump, &reply, &buf)) {
         struct route_table_msg msg;
 
-        if (route_table_parse(&reply, &msg)) {
+        if (route_table_parse_ns(&reply, &msg, netns)) {
             struct nlmsghdr *nlmsghdr = nl_msg_nlmsghdr(&reply);
 
             /* Older kernels do not support filtering. */
@@ -222,7 +223,8 @@ route_table_reset(void)
 /* Return RTNLGRP_IPV4_ROUTE or RTNLGRP_IPV6_ROUTE on success, 0 on parse
  * error. */
 static int
-route_table_parse(struct ofpbuf *buf, void *change_)
+route_table_parse_ns(struct ofpbuf *buf, void *change_,
+                     const char *netns OVS_UNUSED)
 {
     struct route_table_msg *change = change_;
     bool parsed, ipv4 = false;

@@ -1749,7 +1749,7 @@ static struct ovs_mutex pool_mutex = OVS_MUTEX_INITIALIZER;
 static struct shash pools OVS_GUARDED_BY(pool_mutex) =
                                 SHASH_INITIALIZER(&pools);
 
-static int
+int
 nl_sock_ns_create(const char *netns, int protocol, struct nl_sock **sockp) {
 #ifndef __linux__
     if (netns) {

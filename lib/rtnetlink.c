@@ -190,7 +190,8 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 
 /* Return RTNLGRP_LINK on success, 0 on parse error. */
 static int
-rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
+rtnetlink_parse_cb(struct ofpbuf *buf, void *change,
+                   const char *netns OVS_UNUSED)
 {
     return rtnetlink_parse(buf, change) ? RTNLGRP_LINK : 0;
 }
@@ -210,7 +211,7 @@ struct nln_notifier *
 rtnetlink_notifier_create(rtnetlink_notify_func *cb, void *aux)
 {
     if (!nln) {
-        nln = nln_create(NETLINK_ROUTE, rtnetlink_parse_cb, &rtn_change);
+        nln = nln_create(NULL, NETLINK_ROUTE, rtnetlink_parse_cb, &rtn_change);
     }
 
     return nln_notifier_create(nln, RTNLGRP_LINK, (nln_notify_func *) cb, aux);
