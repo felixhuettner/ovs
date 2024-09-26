@@ -65,8 +65,6 @@ static bool route_table_valid = false;
 static void route_table_reset(void);
 static void route_table_handle_msg(const struct route_table_msg *,
                                    void *);
-static int route_table_parse_ns(struct ofpbuf *, void *change,
-                                const char *netns);
 static void route_table_change(const struct route_table_msg *, void *);
 static void route_map_clear(void);
 
@@ -207,7 +205,7 @@ route_table_reset(void)
 
 /* Return RTNLGRP_IPV4_ROUTE or RTNLGRP_IPV6_ROUTE on success, 0 on parse
  * error. */
-static int
+int
 route_table_parse_ns(struct ofpbuf *buf, void *change_,
                      const char *netns OVS_UNUSED)
 {
