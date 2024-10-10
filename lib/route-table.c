@@ -225,6 +225,7 @@ route_table_add_nexthop(struct route_table_msg *change,
         nh->rta_gw = nl_attr_get_in6_addr(nl_gw);
     }
 
+    nh->ifindex = ifindex;
     if (ifindex && !if_indextoname(ifindex, nh->ifname)) {
         int error = errno;
 
