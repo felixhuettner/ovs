@@ -8,3 +8,16 @@ NS_EXEC([ns1337], [ip link add vrf1337 type vrf table 1337])
 AT_CHECK([ovstest test-netlink-socket], [0])
 AT_CLEANUP
 
+AT_SETUP([route table])
+AT_SKIP_IF([test "$IS_WIN32" = "yes"])
+AT_SKIP_IF([test "$IS_BSD" = "yes"])
+ADD_NAMESPACES([ns1337])
+NS_EXEC([ns1337], [ip link set lo up])
+NS_EXEC([ns1337], [ip link add br-test type bridge])
+NS_EXEC([ns1337], [ip link set br-test up])
+NS_EXEC([ns1337], [ip addr add 192.168.0.10/24 dev br-test])
+NS_EXEC([ns1337], [ip route add 172.16.0.0/16 via 192.168.0.1])
+NS_EXEC([ns1337], [ip route add 172.17.0.0/16 nexthop via 192.168.0.1 nexthop via 127.0.0.1])
+AT_CHECK([ovstest test-route-table], [0])
+AT_CLEANUP
+

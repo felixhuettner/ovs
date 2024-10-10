@@ -502,6 +502,7 @@ tests_ovstest_SOURCES += \
 	tests/test-netlink-conntrack.c \
 	tests/test-netlink-policy.c \
 	tests/test-netlink-socket.c \
+	tests/test-route-table.c \
 	tests/test-psample.c
 endif
 

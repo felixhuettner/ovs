@@ -203,12 +203,57 @@ route_table_reset(void)
     }
 }
 
+static int
+route_table_index_to_name(uint32_t ifindex, const char *netns,
+                          char ifname[IFNAMSIZ])
+{
+    if (!ifindex) {
+        return false;
+    }
+    if (netns) {
+        struct rtnetlink_change rtnl_change;
+        struct ifinfomsg *ifinfo;
+        struct ofpbuf request;
+        struct ofpbuf *reply;
+        int err;
+
+        ofpbuf_init(&request, 0);
+        nl_msg_put_nlmsghdr(&request,
+                            sizeof(struct ifinfomsg),
+                            RTM_GETLINK, NLM_F_REQUEST);
+        ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
+        ifinfo->ifi_index = ifindex;
+
+        err = nl_ns_transact(netns, NETLINK_ROUTE, &request, &reply);
+        if (err != 0) {
+            ofpbuf_uninit(&request);
+            return err;
+        }
+        if (!rtnetlink_parse(reply, &rtnl_change)) {
+            ofpbuf_uninit(&request);
+            ofpbuf_delete(reply);
+            return -1;
+        }
+        ovs_strlcpy(ifname, rtnl_change.ifname, IFNAMSIZ);
+        ofpbuf_uninit(&request);
+        ofpbuf_delete(reply);
+    } else {
+        if (!if_indextoname(ifindex, ifname)) {
+            return errno;
+        }
+    }
+    return 0;
+}
+
 static bool
 route_table_add_nexthop(struct route_table_msg *change,
                         bool ipv4,
                         struct nlattr *nl_gw,
-                        uint32_t ifindex)
+                        uint32_t ifindex,
+                        const char *netns)
 {
+    int err;
+
     if (change->rd.n_nexthops >= MAX_ROUTE_DATA_NEXTHOP) {
         VLOG_DBG("tried to add more nexthops to a route than possible");
         return false;
@@ -227,12 +272,11 @@ route_table_add_nexthop(struct route_table_msg *change,
         }
     }
 
-    if (ifindex && !if_indextoname(ifindex, nh->ifname)) {
-        int error = errno;
-
+    err = route_table_index_to_name(ifindex, netns, nh->ifname);
+    if (err != 0) {
         VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
-                    ifindex, ovs_strerror(error));
-        if (error == ENXIO) {
+                    ifindex, ovs_strerror(err));
+        if (err == ENXIO) {
             change->relevant = false;
         } else {
             return false;
@@ -255,7 +299,7 @@ route_table_add_nexthop(struct route_table_msg *change,
 static bool
 route_table_parse_multipath(struct route_table_msg *change,
                             struct nlattr *multipath,
-                            bool ipv4)
+                            bool ipv4, const char *netns)
 {
     static const struct nl_policy policy[] = {
         [RTA_GATEWAY] = { .type = NL_A_U32, .optional = true },
@@ -287,12 +331,15 @@ route_table_parse_multipath(struct route_table_msg *change,
         }
 
         if (!parsed) {
-            VLOG_DBG_RL(&rl, "received unparseable rtnetlink route message");
+            VLOG_DBG_RL(&rl, "received unparseable rtnetlink multipath "
+                             "nexthop");
             return false;
         }
 
         if (!route_table_add_nexthop(change, ipv4, attrs[RTA_GATEWAY],
-                                     rtnh->rtnh_ifindex)) {
+                                     rtnh->rtnh_ifindex, netns)) {
+            VLOG_DBG_RL(&rl, "received unparseable rtnetlink multipath "
+                             "nexthop");
             return false;
         }
 
@@ -310,8 +357,7 @@ route_table_parse_multipath(struct route_table_msg *change,
 /* Return RTNLGRP_IPV4_ROUTE or RTNLGRP_IPV6_ROUTE on success, 0 on parse
  * error. */
 int
-route_table_parse_ns(struct ofpbuf *buf, void *change_,
-                     const char *netns OVS_UNUSED)
+route_table_parse_ns(struct ofpbuf *buf, void *change_, const char *netns)
 {
     struct route_table_msg *change = change_;
     bool parsed, ipv4 = false;
@@ -426,12 +472,15 @@ route_table_parse_ns(struct ofpbuf *buf, void *change_,
                 ifindex = nl_attr_get_u32(attrs[RTA_OIF]);
             }
             if (!route_table_add_nexthop(change, ipv4, attrs[RTA_GATEWAY],
-                                         ifindex)) {
+                                         ifindex, netns)) {
+                VLOG_DBG_RL(&rl, "received unparseable route nexthop");
                 return 0;
             }
         } else if (attrs[RTA_MULTIPATH]) {
             if (!route_table_parse_multipath(change,
-                                             attrs[RTA_MULTIPATH], ipv4)) {
+                                             attrs[RTA_MULTIPATH], ipv4,
+                                             netns)) {
+                VLOG_DBG_RL(&rl, "received unparseable route multipath");
                 return 0;
             }
         }
