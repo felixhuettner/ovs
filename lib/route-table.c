@@ -146,8 +146,58 @@ route_table_wait(void)
     ovs_mutex_unlock(&route_table_mutex);
 }
 
+static int
+route_table_index_to_name(uint32_t ifindex, const char *netns,
+                          char ifname[IFNAMSIZ])
+{
+    if (!ifindex) {
+        return false;
+    }
+    if (netns) {
+        struct rtnetlink_change rtnl_change;
+        struct ifinfomsg *ifinfo;
+        struct ofpbuf request;
+        struct ofpbuf *reply;
+        int err;
+
+        ofpbuf_init(&request, 0);
+        nl_msg_put_nlmsghdr(&request,
+                            sizeof(struct ifinfomsg),
+                            RTM_GETLINK, NLM_F_REQUEST);
+        ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
+        ifinfo->ifi_index = ifindex;
+
+        err = nl_ns_transact(netns, NETLINK_ROUTE, &request, &reply);
+        if (err != 0) {
+            ofpbuf_uninit(&request);
+            return err;
+        }
+        if (!rtnetlink_parse(reply, &rtnl_change)) {
+            ofpbuf_uninit(&request);
+            ofpbuf_delete(reply);
+            return -1;
+        }
+        ovs_strlcpy(ifname, rtnl_change.ifname, IFNAMSIZ);
+        ofpbuf_uninit(&request);
+        ofpbuf_delete(reply);
+    } else {
+        if (!if_indextoname(ifindex, ifname)) {
+            return errno;
+        }
+    }
+    return 0;
+}
+
 bool
 route_table_dump_one_table(uint32_t id,
+                           route_table_handle_msg_callback *handle_msg_cb,
+                           void *aux)
+{
+    return route_table_ns_dump_one_table(NULL, id, handle_msg_cb, aux);
+}
+
+bool
+route_table_ns_dump_one_table(const char *netns, uint32_t id,
                            route_table_handle_msg_callback *handle_msg_cb,
                            void *aux)
 {
@@ -171,14 +221,14 @@ route_table_dump_one_table(uint32_t id,
         rq_msg->rtm_table = id;
     }
 
-    nl_dump_start(&dump, NETLINK_ROUTE, &request);
+    nl_ns_dump_start(netns, &dump, NETLINK_ROUTE, &request);
     ofpbuf_uninit(&request);
 
     ofpbuf_use_stub(&buf, reply_stub, sizeof reply_stub);
     while (nl_dump_next(&dump, &reply, &buf)) {
         struct route_table_msg msg;
 
-        if (route_table_parse(&reply, &msg)) {
+        if (route_table_parse(netns, &reply, &msg)) {
             struct nlmsghdr *nlmsghdr = nl_msg_nlmsghdr(&reply);
 
             /* Older kernels do not support filtering. */
@@ -221,13 +271,14 @@ route_table_reset(void)
 }
 
 static int
-route_table_parse__(struct ofpbuf *buf, size_t ofs,
+route_table_parse__(const char *netns, struct ofpbuf *buf, size_t ofs,
                     const struct nlmsghdr *nlmsg, const struct rtmsg *rtm,
                     const struct rtnexthop *rtnh,
                     struct route_table_msg *change)
 {
     struct route_data_nexthop *rdnh = NULL;
     bool parsed, ipv4 = false;
+    int err;
 
     static const struct nl_policy policy[] = {
         [RTA_DST] = { .type = NL_A_U32, .optional = true  },
@@ -304,12 +355,12 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
             rta_oif = rtnh
                 ? rtnh->rtnh_ifindex : nl_attr_get_u32(attrs[RTA_OIF]);
 
-            if (!if_indextoname(rta_oif, rdnh->ifname)) {
-                int error = errno;
+            err = route_table_index_to_name(rta_oif, netns, rdnh->ifname);
+             if (err != 0) {
 
                 VLOG_DBG_RL(&rl, "Could not find interface name[%u]: %s",
-                            rta_oif, ovs_strerror(error));
-                if (error == ENXIO) {
+                            rta_oif, ovs_strerror(err));
+                if (err == ENXIO) {
                     change->relevant = false;
                 } else {
                     goto error_out;
@@ -412,7 +463,7 @@ route_table_parse__(struct ofpbuf *buf, size_t ofs,
                     goto error_out;
                 }
 
-                if (!route_table_parse__(&mp_buf, 0, nlmsg, rtm, mp_rtnh,
+                if (!route_table_parse__(netns, &mp_buf, 0, nlmsg, rtm, mp_rtnh,
                                          &mp_change)) {
                     goto error_out;
                 }
@@ -445,7 +496,7 @@ error_out:
  *
  * In case of error, any allocated memory will be freed before return. */
 int
-route_table_parse(struct ofpbuf *buf, void *change)
+route_table_parse(const char *netns, struct ofpbuf *buf, void *change)
 {
     struct nlmsghdr *nlmsg;
     struct rtmsg *rtm;
@@ -453,7 +504,7 @@ route_table_parse(struct ofpbuf *buf, void *change)
     nlmsg = ofpbuf_at(buf, 0, NLMSG_HDRLEN);
     rtm = ofpbuf_at(buf, NLMSG_HDRLEN, sizeof *rtm);
 
-    return route_table_parse__(buf, NLMSG_HDRLEN + sizeof *rtm,
+    return route_table_parse__(netns, buf, NLMSG_HDRLEN + sizeof *rtm,
                                nlmsg, rtm, NULL, change);
 }
 

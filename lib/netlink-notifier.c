@@ -41,6 +41,7 @@ struct nln {
     int protocol;                /* Protocol passed to nl_sock_create(). */
     nln_parse_func *parse;       /* Message parsing function. */
     void *change;                /* Change passed to parse. */
+    char *netns;
 };
 
 struct nln_notifier {
@@ -60,6 +61,12 @@ struct nln_notifier {
 struct nln *
 nln_create(int protocol, nln_parse_func *parse, void *change)
 {
+    return nln_ns_create(NULL, protocol, parse, change);
+}
+
+struct nln *
+nln_ns_create(char *netns, int protocol, nln_parse_func *parse, void *change)
+{
     struct nln *nln;
 
     nln = xzalloc(sizeof *nln);
@@ -67,6 +74,7 @@ nln_create(int protocol, nln_parse_func *parse, void *change)
     nln->protocol = protocol;
     nln->parse = parse;
     nln->change = change;
+    nln->netns = netns;
     nln->has_run = false;
 
     ovs_list_init(&nln->all_notifiers);
@@ -84,6 +92,7 @@ nln_destroy(struct nln *nln)
     if (nln) {
         ovs_assert(ovs_list_is_empty(&nln->all_notifiers));
         nl_sock_destroy(nln->notify_sock);
+        free(nln->netns);
         free(nln);
     }
 }
@@ -187,7 +196,7 @@ nln_run(struct nln *nln)
         ofpbuf_use_stub(&buf, buf_stub, sizeof buf_stub);
         error = nl_sock_recv(nln->notify_sock, &buf, NULL, false);
         if (!error) {
-            int group = nln->parse(&buf, nln->change);
+            int group = nln->parse(nln->netns, &buf, nln->change);
 
             if (group != 0) {
                 nln_report(nln, nln->change, group);

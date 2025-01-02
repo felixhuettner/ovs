@@ -164,6 +164,9 @@ typedef void route_table_handle_msg_callback(const struct route_table_msg *,
 bool route_table_dump_one_table(uint32_t id,
                                 route_table_handle_msg_callback *,
                                 void *aux);
-int route_table_parse(struct ofpbuf *buf, void *change);
+bool route_table_ns_dump_one_table(const char *netns, uint32_t id,
+                                   route_table_handle_msg_callback *,
+                                   void *aux);
+int route_table_parse(const char *netns, struct ofpbuf *buf, void *change);
 void route_data_destroy(struct route_data *rd);
 #endif /* route-table.h */

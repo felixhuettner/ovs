@@ -190,7 +190,8 @@ rtnetlink_parse(struct ofpbuf *buf, struct rtnetlink_change *change)
 
 /* Return RTNLGRP_LINK on success, 0 on parse error. */
 static int
-rtnetlink_parse_cb(struct ofpbuf *buf, void *change)
+rtnetlink_parse_cb(const char *netns OVS_UNUSED, struct ofpbuf *buf,
+                   void *change)
 {
     return rtnetlink_parse(buf, change) ? RTNLGRP_LINK : 0;
 }

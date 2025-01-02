@@ -32,7 +32,7 @@ struct test_change {
 };
 
 static int
-event_parse(struct ofpbuf *buf, void *change_)
+event_parse(const char *netns OVS_UNUSED, struct ofpbuf *buf, void *change_)
 {
     struct test_change *change = change_;
 
