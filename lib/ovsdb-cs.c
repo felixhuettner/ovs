@@ -608,12 +608,12 @@ ovsdb_cs_db_add_event(struct ovsdb_cs_db *db, enum ovsdb_cs_event_type type)
  *
  * Initializes 'events' with a list of events that occurred on 'cs'.  The
  * caller must process and destroy all of the events. */
-void
+int
 ovsdb_cs_run(struct ovsdb_cs *cs, struct ovs_list *events)
 {
     ovs_list_init(events);
     if (!cs->session) {
-        return;
+        return EINVAL;
     }
 
     ovsdb_cs_send_cond_change(cs);
@@ -639,15 +639,29 @@ ovsdb_cs_run(struct ovsdb_cs *cs, struct ovs_list *events)
         }
     }
 
+    int ret;
     for (int i = 0; i < 50; i++) {
-        struct jsonrpc_msg *msg = jsonrpc_session_recv(cs->session);
-        if (!msg) {
+        struct jsonrpc_msg *msg = NULL;
+        ret = jsonrpc_session_recv(cs->session, &msg);
+        if (ret == EAGAIN) {
             break;
         }
-        ovsdb_cs_process_msg(cs, msg);
-        jsonrpc_msg_destroy(msg);
+        /* Even if we would not block we might not receive a message for two
+         * reasons:
+         *   1. We did not yet receive the message fully and stopped reading.
+         *   2. The message was already handled by the jsonrpc layer. */
+        if (msg) {
+            ovsdb_cs_process_msg(cs, msg);
+            jsonrpc_msg_destroy(msg);
+        }
     }
     ovs_list_push_back_all(events, &cs->data.events);
+
+    if (ret == EAGAIN) {
+        return EAGAIN;
+    } else {
+        return 0;
+    }
 }
 
 /* Arranges for poll_block() to wake up when ovsdb_cs_run() has something to
