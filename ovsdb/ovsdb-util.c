@@ -14,6 +14,7 @@
  */
 
 #include <config.h>
+#include "ovsdb-error.h"
 #include "row.h"
 #include "sset.h"
 #include "table.h"
@@ -323,4 +324,14 @@ unwind:
 
     /* Sort and check constraints. */
     ovsdb_datum_sort_assert(datum, &column->type);
+}
+
+void
+log_and_free_error(struct ovsdb_error *error)
+{
+    if (error) {
+        char *s = ovsdb_error_to_string_free(error);
+        VLOG_INFO("%s", s);
+        free(s);
+    }
 }

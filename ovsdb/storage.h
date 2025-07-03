@@ -21,6 +21,7 @@
 #include "compiler.h"
 
 struct json;
+struct ovsdb;
 struct ovsdb_schema;
 struct ovsdb_storage;
 struct simap;
@@ -100,5 +101,7 @@ struct ovsdb_schema *ovsdb_storage_read_schema(struct ovsdb_storage *);
  * to be successfully written to the storage. */
 bool ovsdb_storage_precheck_prereq(const struct ovsdb_storage *,
                                    const struct uuid *prereq);
+
+void ovsdb_storage_set_db(struct ovsdb_storage *storage, struct ovsdb *db);
 
 #endif /* ovsdb/storage.h */

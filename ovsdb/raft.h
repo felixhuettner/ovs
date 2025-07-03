@@ -66,6 +66,7 @@
 #include "uuid.h"
 
 struct json;
+struct ovsdb;
 struct ovsdb_log;
 struct raft;
 struct simap;
@@ -190,4 +191,7 @@ void raft_take_leadership(struct raft *);
 void raft_transfer_leadership(struct raft *, const char *reason);
 
 bool raft_precheck_prereq(const struct raft *, const struct uuid *prereq);
+
+void raft_set_db(struct raft *, struct ovsdb *);
+
 #endif /* lib/raft.h */

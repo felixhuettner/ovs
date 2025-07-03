@@ -16,6 +16,9 @@
 #ifndef OVSDB_UTIL_H
 #define OVSDB_UTIL_H 1
 
+struct ovsdb_row;
+enum ovsdb_atomic_type;
+
 /* Database access utility functions. */
 void ovsdb_util_clear_column(struct ovsdb_row *, const char *column_name);
 struct ovsdb_datum *ovsdb_util_get_datum(struct ovsdb_row *row,
@@ -61,5 +64,6 @@ bool ovsdb_util_read_uuid_column(const struct ovsdb_row *row,
 void ovsdb_util_write_uuid_column(struct ovsdb_row *row,
                                   const char *column_name,
                                   const struct uuid *);
+void log_and_free_error(struct ovsdb_error *error);
 
 #endif /* ovsdb/util.h */

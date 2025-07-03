@@ -494,6 +494,10 @@ ovsdb_create(struct ovsdb_schema *schema, struct ovsdb_storage *storage)
     /* Use RBAC roles table if present. */
     db->rbac_role = ovsdb_get_table(db, "RBAC_Role");
 
+    if (storage) {
+        ovsdb_storage_set_db(storage, db);
+    }
+
     return db;
 }
 

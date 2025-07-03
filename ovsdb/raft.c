@@ -17,6 +17,8 @@
 #include <config.h>
 
 #include "raft.h"
+#include "ovsdb/ovsdb-util.h"
+#include "ovsdb/ovsdb.h"
 #include "raft-private.h"
 
 #include <errno.h>
@@ -190,6 +192,7 @@ static void raft_waiters_destroy(struct raft *);
 struct raft {
     struct hmap_node hmap_node; /* In 'all_rafts'. */
     struct ovsdb_log *log;
+    struct ovsdb *db;
 
 /* Persistent derived state.
  *
@@ -4636,6 +4639,11 @@ raft_handle_become_leader(struct raft *raft,
         VLOG_INFO("received leadership transfer from %s in term %"PRIu64,
                   raft_get_nickname(raft, &rq->common.sid, buf, sizeof buf),
                   rq->term);
+        if (raft->db && !ovsdb_snapshot_in_progress(raft->db)) {
+            VLOG_INFO("Trying to snapshot before taking leadership");
+            log_and_free_error(ovsdb_snapshot(raft->db, false));
+        }
+
         raft_start_election(raft, false, true);
     }
 }
@@ -5318,4 +5326,9 @@ raft_init(void)
     unixctl_command_register("cluster/failure-test", "FAILURE SCENARIO", 1, 1,
                              raft_unixctl_failure_test, NULL);
     ovsthread_once_done(&once);
+}
+
+void
+raft_set_db(struct raft *raft, struct ovsdb *db) {
+    raft->db = db;
 }

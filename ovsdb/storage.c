@@ -673,3 +673,10 @@ ovsdb_storage_precheck_prereq(const struct ovsdb_storage *storage,
     }
     return raft_precheck_prereq(storage->raft, prereq);
 }
+
+void
+ovsdb_storage_set_db(struct ovsdb_storage *storage, struct ovsdb *db) {
+    if (storage->raft) {
+        raft_set_db(storage->raft, db);
+    }
+}

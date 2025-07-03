@@ -237,16 +237,6 @@ static bool load_config(FILE *config_file, struct shash *remotes,
                         char **sync_exclude, bool *is_backup);
 
 static void
-log_and_free_error(struct ovsdb_error *error)
-{
-    if (error) {
-        char *s = ovsdb_error_to_string_free(error);
-        VLOG_INFO("%s", s);
-        free(s);
-    }
-}
-
-static void
 ovsdb_server_replication_remove_db(struct db *db)
 {
     replication_remove_db(db->db);
@@ -1196,6 +1186,8 @@ open_db(struct server_config *server_config,
         free(error_s);
         return error;
     }
+
+    ovsdb_storage_set_db(storage, db->db);
 
     add_db(server_config, db);
 
