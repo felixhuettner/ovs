@@ -122,7 +122,7 @@ cat stdout >> output
 dnl Add some crap to the database log and run another transaction, which should
 dnl ignore the crap and truncate it out of the log.
 bash -c "echo 'OVSDB JSON 26 d1cd8c1ecd3aff070019a75973f35832ff0cfe15
-{\"logdata\":{\"invalid\":{}}}' >> db"
+{\"logdata\":{\"invalid\":{}}}' >> db.*"
 AT_DATA([txnfile], [[ovsdb-client transact unix:socket \
 '["ordinals",
   {"op": "insert",
