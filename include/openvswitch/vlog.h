@@ -277,6 +277,8 @@ void vlog_rate_limit(const struct vlog_module *, enum vlog_level,
 
 void vlog_usage(void);
 
+bool vlog_is_fd(int fd);
+
 /* Implementation details. */
 #define VLOG(LEVEL, ...)                                \
     do {                                                \

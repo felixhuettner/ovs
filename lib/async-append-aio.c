@@ -161,3 +161,8 @@ async_append_flush(struct async_append *ap)
         async_append_wait(ap);
     }
 }
+
+bool async_append_is_fd(const struct async_append *ap, int fd)
+{
+    return ap->fd == fd;
+}

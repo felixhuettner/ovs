@@ -193,7 +193,8 @@ bool raft_precheck_prereq(const struct raft *, const struct uuid *prereq);
 struct ovsdb_error *raft_compact_start(struct raft *raft,
                                        uint64_t applied_index,
                                        struct ovsdb_log **dst,
-                                       void **aux)
+                                       void **aux,
+                                       int *keep_fd)
     OVS_WARN_UNUSED_RESULT;
 struct ovsdb_error *raft_compact_commit(struct raft *raft,
                                         struct ovsdb_log *dst,

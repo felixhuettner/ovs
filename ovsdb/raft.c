@@ -5318,7 +5318,7 @@ raft_init(void)
 
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 raft_compact_start(struct raft *raft, uint64_t applied_index,
-                   struct ovsdb_log **dst, void **aux)
+                   struct ovsdb_log **dst, void **aux, int *keep_fd)
 {
     if (raft->joining) {
         return ovsdb_error(NULL,
@@ -5334,7 +5334,7 @@ raft_compact_start(struct raft *raft, uint64_t applied_index,
                            "cannot store a snapshot following failure");
     }
 
-    struct ovsdb_error *error = ovsdb_log_compact_start(raft->log, dst);
+    struct ovsdb_error *error = ovsdb_log_compact_start(raft->log, dst, keep_fd);
 
     if (!error) {
         struct raft_compaction_state *state = xzalloc(sizeof *state);
@@ -5361,14 +5361,38 @@ struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 raft_compact_commit(struct raft *raft, struct ovsdb_log *dst,
                     uint64_t applied_index, void *aux)
 {
-    struct ovsdb_error *error = ovsdb_log_compact_commit(raft->log, dst);
+    // TODO: this reading of the new file again to gain the snapshot is really
+    // not nice. We should ideally pass this via memory.
+    /* Read the header from the newly created compated data. TODO this is not
+     * ideal. */
+    struct json *json;
+    struct ovsdb_error *error = ovsdb_log_read_from_start(dst);
+    if (error) {
+        return error;
+    }
+    error = ovsdb_log_read(dst, &json);
+    if (error || !json) {
+        /* Report error or end-of-file. */
+        return error;
+    }
+    ovsdb_log_mark_base(dst);
+
+    struct raft_header h;
+    error = raft_header_from_json(&h, json);
+    json_destroy(json);
+    if (error) {
+        return error;
+    }
+
+    raft_entry_uninit(&raft->snap);
+    raft_entry_clone(&raft->snap, &h.snap);
+
+    error = ovsdb_log_compact_commit(raft->log, dst);
     if (error) {
         return error;
     }
 
     struct raft_compaction_state *state = aux;
-    raft_entry_uninit(&raft->snap);
-    raft->snap = state->header.snap;
     free(state->header.name);
     free(state->header.local_address);
     free(state);

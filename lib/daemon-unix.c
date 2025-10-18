@@ -227,6 +227,7 @@ make_pidfile(void)
 static pid_t
 fork_and_clean_up(void)
 {
+    assert_single_threaded();
     pid_t pid = xfork();
     if (pid > 0) {
         /* Running in parent process. */

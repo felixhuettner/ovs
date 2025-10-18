@@ -49,3 +49,8 @@ async_append_flush(struct async_append *ap OVS_UNUSED)
 {
     OVS_NOT_REACHED();
 }
+
+bool async_append_is_fd(const struct async_append *ap OVS_UNUSED,
+                        int fd OVS_UNUSED) {
+    return false;
+}

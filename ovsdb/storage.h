@@ -100,7 +100,8 @@ bool ovsdb_storage_precheck_prereq(const struct ovsdb_storage *,
 struct ovsdb_error *ovsdb_storage_compact_start(struct ovsdb_storage *storage,
                                                 uint64_t index,
                                                 struct ovsdb_log **dst,
-                                                void **aux)
+                                                void **aux,
+                                                int *keep_fd)
     OVS_WARN_UNUSED_RESULT;
 struct ovsdb_error *ovsdb_storage_compact_commit(struct ovsdb_storage *storage,
                                                  struct ovsdb_log *dst,

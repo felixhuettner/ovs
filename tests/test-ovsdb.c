@@ -428,7 +428,8 @@ do_log_io(struct ovs_cmdl_context *ctx)
             error = NULL;
         } else if (!strcmp(command, "compact_start")) {
             ovs_assert(!replacement);
-            error = ovsdb_log_compact_start(log, &replacement);
+            int keep_fd;
+            error = ovsdb_log_compact_start(log, &replacement, &keep_fd);
         } else if (!strcmp(command, "compact_commit")) {
             ovs_assert(replacement);
             error = ovsdb_log_compact_commit(log, replacement);

@@ -536,8 +536,6 @@ fatal_signal_fork(void)
 {
     size_t i;
 
-    assert_single_threaded();
-
     fatal_signal_destroy_wakeup_events();
     fatal_signal_create_wakeup_events();
 

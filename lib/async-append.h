@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include <stdbool.h>
 #ifndef ASYNC_APPEND_H
 #define ASYNC_APPEND_H 1
 
@@ -49,5 +50,9 @@ void async_append_write(struct async_append *ap,
  * async_append_write() has been committed to the point that it will be written
  * to disk barring an operating system or hardware failure. */
 void async_append_flush(struct async_append *ap);
+
+/* Returns true if the passed fd number is used for this async_append
+ * instance. */
+bool async_append_is_fd(const struct async_append *ap, int fd);
 
 #endif /* async-append.h */

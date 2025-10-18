@@ -288,6 +288,62 @@ process_start(char **argv, struct process **pp)
 #endif
 }
 
+/* Starts a subprocess based on the current state of the caller (so fork
+ * without exec).
+ *
+ * All file descriptors are closed before executing the subprocess, except for
+ * fds 0, 1, 2, the ones used by the vlog system and the ones passed in by the
+ * user.
+ *
+ * Returns 0 if successful, otherwise a positive errno value indicating the
+ * error.  If successful, '*pp' is assigned a new struct process that may be
+ * used to query the process's status.  On failure, '*pp' is set to NULL. */
+int
+process_start_func(void (*func)(void*), void* args, char *name, int keep_fd, struct process **pp)
+{
+#ifndef _WIN32
+    pid_t pid;
+    int error;
+    sigset_t prev_mask;
+
+    *pp = NULL;
+    COVERAGE_INC(process_start);
+
+    fatal_signal_block(&prev_mask);
+    pid = fork();
+    if (pid < 0) {
+        VLOG_WARN("fork failed: %s", ovs_strerror(errno));
+        error = errno;
+    } else if (pid) {
+        /* Running in parent process. */
+        *pp = process_register(name, pid);
+        error = 0;
+    } else {
+        /* Running in child process. */
+        int fd_max = get_max_fds();
+        int fd;
+
+        fatal_signal_fork();
+        for (fd = 3; fd < fd_max; fd++) {
+            if (fd == keep_fd || vlog_is_fd(fd)) {
+                continue;
+            }
+            close(fd);
+        }
+        xpthread_sigmask(SIG_SETMASK, &prev_mask, NULL);
+        func(args);
+        fprintf(stderr, "running func failed: %s\n",
+                ovs_strerror(errno));
+        _exit(1);
+    }
+    xpthread_sigmask(SIG_SETMASK, &prev_mask, NULL);
+    return error;
+#else
+    *pp = NULL;
+    return ENOSYS;
+#endif
+}
+
 /* Destroys process 'p'. */
 void
 process_destroy(struct process *p)

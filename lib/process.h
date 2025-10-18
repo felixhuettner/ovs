@@ -41,6 +41,9 @@ struct process_info {
  * group are called only from a single thread at any given time. */
 void process_init(void);
 int process_start(char **argv, struct process **);
+int
+process_start_func(void (*func)(void*), void* args, char *name, int keep_fd,
+                   struct process **pp);
 void process_destroy(struct process *);
 int process_kill(const struct process *, int signr);
 pid_t process_pid(const struct process *);

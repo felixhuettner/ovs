@@ -21,6 +21,7 @@
 #include "openvswitch/list.h"
 #include "openvswitch/shash.h"
 #include "openvswitch/uuid.h"
+#include "process.h"
 #include "ovs-thread.h"
 
 struct json;
@@ -74,7 +75,7 @@ struct ovsdb_txn_history_node {
 };
 
 struct ovsdb_compaction_state {
-    pthread_t thread;          /* Thread handle. */
+    struct process *process;          /* Process handle. */
 
     struct ovsdb *db;          /* Copy of a database data to compact. */
 
@@ -91,10 +92,6 @@ struct ovsdb_compaction_state {
 
     struct ovsdb_error *error; /* NULL on success, otherwise contains the
                                 * error. */
-
-    /* Completion signaling. */
-    struct seq *done;
-    uint64_t seqno;
 
     uint64_t init_time;        /* Time spent by the main thread preparing. */
     uint64_t thread_time;      /* Time spent for compaction by the thread. */

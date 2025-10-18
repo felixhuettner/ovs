@@ -15,8 +15,10 @@
 
 #include <config.h>
 #include <signal.h>
+#include <sys/wait.h>
 
 #include "ovsdb.h"
+#include "process.h"
 
 #if HAVE_DECL_MALLOC_TRIM
 #include <malloc.h>
@@ -595,28 +597,6 @@ ovsdb_get_table(const struct ovsdb *db, const char *name)
     return shash_find_data(&db->tables, name);
 }
 
-static struct ovsdb *
-ovsdb_clone_data(const struct ovsdb *db)
-{
-    struct ovsdb *new = ovsdb_create(ovsdb_schema_clone(db->schema), NULL);
-
-    struct shash_node *node;
-    SHASH_FOR_EACH (node, &db->tables) {
-        struct ovsdb_table *table = node->data;
-        struct ovsdb_table *new_table = shash_find_data(&new->tables,
-                                                        node->name);
-        struct ovsdb_row *row, *new_row;
-
-        hmap_reserve(&new_table->rows, hmap_count(&table->rows));
-        HMAP_FOR_EACH (row, hmap_node, &table->rows) {
-            new_row = ovsdb_row_datum_clone(row);
-            hmap_insert(&new_table->rows, &new_row->hmap_node,
-                        ovsdb_row_hash(new_row));
-        }
-    }
-
-    return new;
-}
 struct ovsdb_write * OVS_WARN_UNUSED_RESULT
 ovsdb_write_schema_change(struct ovsdb *db,
                           const struct ovsdb_schema *schema,
@@ -628,8 +608,11 @@ ovsdb_write_schema_change(struct ovsdb *db,
      * might be expensive in terms of disk writes, but there is no real
      * alternative. */
     if (ovsdb_compcation_in_progress(db)) {
-        xpthread_kill(db->compact_state->thread, SIGKILL);
-        xpthread_join(db->compact_state->thread, NULL);
+        process_kill(db->compact_state->process, SIGKILL);
+        //TODO
+        while (!process_exited(db->compact_state->process)) {
+        }
+
         struct ovsdb_error *err = ovsdb_storage_compact_abort(
                 db->storage, db->compact_state->log,
                 db->compact_state->aux);
@@ -645,19 +628,19 @@ ovsdb_write_schema_change(struct ovsdb *db,
                                              prereq, resultp);
 }
 
-static void *
+static void
 compaction_thread(void *aux)
 {
     struct ovsdb_compaction_state *state = aux;
     uint64_t start_time = time_msec();
     struct json *data, *serialized_data;
 
+    vlog_init();
     VLOG_DBG("%s: Compaction thread started.", state->db->name);
     data = ovsdb_to_txn_json(state->db, "compacting database online",
                              /* Do not allow shallow copies to avoid races. */
                              false);
     serialized_data = json_serialized_object_create(data);
-    json_destroy(data);
 
     state->error = ovsdb_storage_compact_write(state->is_raft,
                                                state->log,
@@ -669,42 +652,41 @@ compaction_thread(void *aux)
 
     VLOG_DBG("%s: Compaction thread finished in %"PRIu64" ms.",
              state->db->name, state->thread_time);
-
-    ovsdb_destroy(state->db);
-    state->db = NULL;
-    json_destroy(state->schema);
-    state->schema = NULL;
-
-    seq_change(state->done);
-    return NULL;
+    if (state->error) {
+        VLOG_ERR("Compaction thread failed: %s.",
+                 ovsdb_error_to_string(state->error));
+        exit(1);
+    }
+    exit(0);
 }
 
 void
 ovsdb_compaction_wait(struct ovsdb *db)
 {
     if (db->compact_state) {
-        seq_wait(db->compact_state->done, db->compact_state->seqno);
+        process_wait(db->compact_state->process);
     }
 }
 
 bool
 ovsdb_compcation_in_progress(struct ovsdb *db)
 {
-    return db->compact_state &&
-           seq_read(db->compact_state->done) == db->compact_state->seqno;
+    process_run();
+    return db->compact_state && !process_exited(db->compact_state->process);
 }
 
 bool
 ovsdb_compaction_ready(struct ovsdb *db)
 {
     return db->compact_state &&
-           seq_read(db->compact_state->done) != db->compact_state->seqno;
+           process_exited(db->compact_state->process);
 }
 
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
 {
-    if (!db->storage || ovsdb_compcation_in_progress(db)) {
+    if (!db->storage ||
+        ovsdb_compcation_in_progress(db)) {
         return NULL;
     }
 
@@ -714,24 +696,21 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
     struct ovsdb_error *error;
 
     if (ovsdb_compaction_ready(db)) {
-        xpthread_join(db->compact_state->thread, NULL);
-
         state = db->compact_state;
         db->compact_state = NULL;
 
-        seq_destroy(state->done);
-
-        if (state->error) {
-            VLOG_WARN("Compaction failed in thread with %s",
-                      ovsdb_error_to_string(state->error));
+        if (process_status(state->process) != 0) {
+            VLOG_WARN("Compaction failed. Exit code: %d",
+                      WEXITSTATUS(process_status(state->process)));
             error = ovsdb_storage_compact_abort(db->storage, state->log,
                                                 state->aux);
             if (error) {
                 VLOG_ABORT("Failure to abort compaction: %s.",
                            ovsdb_error_to_string(error));
             }
+            process_destroy(state->process);
             free(state);
-            return error;
+            return ovsdb_error(NULL, "Compaction failed");
         }
 
         error = ovsdb_storage_compact_commit(db->storage, state->log,
@@ -740,6 +719,7 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
         if (error) {
             VLOG_WARN("Compaction failed with %s",
                       ovsdb_error_to_string(error));
+            process_destroy(state->process);
             free(state);
             return error;
         }
@@ -757,6 +737,7 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
              db->name, elapsed + state->init_time,
              state->init_time, elapsed, state->thread_time);
 
+        process_destroy(state->process);
         free(state);
         return error;
     } else {
@@ -765,8 +746,9 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
 
         struct ovsdb_log *target;
         void *aux;
+        int keep_fd = 0;
         error = ovsdb_storage_compact_start(db->storage, applied_index,
-                                            &target, &aux);
+                                            &target, &aux, &keep_fd);
         if (error) {
             VLOG_WARN("Compaction start failed with %s",
                       ovsdb_error_to_string(error));
@@ -774,17 +756,18 @@ ovsdb_compact(struct ovsdb *db, bool trim_memory OVS_UNUSED)
         }
 
         state = xzalloc(sizeof *state);
-        state->db = ovsdb_clone_data(db);
+        state->db = db;
         state->schema = ovsdb_schema_to_json(db->schema);
         state->log = target;
         state->applied_index = applied_index;
         state->is_raft = applied_index != 0;
         state->aux = aux;
-        state->done = seq_create();
-        state->seqno = seq_read(state->done);
-        state->thread = ovs_thread_create("compaction",
-                                          compaction_thread, state);
         state->init_time = time_msec() - start_time;
+        int err = process_start_func(compaction_thread, state, "compaction", keep_fd, &state->process);
+        if (err != 0) {
+            VLOG_WARN("Error starting process: %d", err);
+            return ovsdb_error(NULL, "test123");
+        }
 
         db->compact_state = state;
         return NULL;

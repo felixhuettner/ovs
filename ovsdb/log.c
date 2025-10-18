@@ -1336,7 +1336,8 @@ ovsdb_log_rename_file(struct ovsdb_log_file *original,
  */
 struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_log_compact_start(struct ovsdb_log *old,
-                        struct ovsdb_log **newp)
+                        struct ovsdb_log **newp,
+                        int *keep_fd)
 {
     struct ovsdb_error *error;
 
@@ -1394,6 +1395,11 @@ ovsdb_log_compact_start(struct ovsdb_log *old,
     error = ovsdb_log_open(tmp_name, old->magic, OVSDB_LOG_CREATE_EXCL_SINGLE,
                            false, newp);
     free(tmp_name);
+
+    if (!error) {
+        *keep_fd = fileno((*newp)->curr->stream);
+    }
+
     return error;
 }
 
@@ -1730,4 +1736,15 @@ void
 ovsdb_log_commit_wait(struct ovsdb_log *log, uint64_t goal)
 {
     ovsdb_log_file_commit_wait(log->curr, goal);
+}
+
+struct ovsdb_error *
+ovsdb_log_read_from_start(struct ovsdb_log *log) {
+    ovs_assert(!log->old && ! log->base);
+    if (fseek(log->curr->stream, 0, SEEK_SET)) {
+        log->error = ovsdb_io_error(errno, "%s: seek failed", log->curr->name);
+        log->state = OVSDB_LOG_BROKEN;
+        return ovsdb_error_clone(log->error);
+    }
+    return NULL;
 }

@@ -660,12 +660,13 @@ struct ovsdb_error * OVS_WARN_UNUSED_RESULT
 ovsdb_storage_compact_start(struct ovsdb_storage *storage,
                             uint64_t index,
                             struct ovsdb_log **dst,
-                            void **aux)
+                            void **aux,
+                            int *keep_fd)
 {
     if (storage->raft) {
-        return raft_compact_start(storage->raft, index, dst, aux);
+        return raft_compact_start(storage->raft, index, dst, aux, keep_fd);
     } else {
-        return ovsdb_log_compact_start(storage->log, dst);
+        return ovsdb_log_compact_start(storage->log, dst, keep_fd);
     }
 }
 

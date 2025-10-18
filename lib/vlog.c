@@ -1396,3 +1396,27 @@ Logging options:\n\
   --syslog-target=HOST:PORT  also send syslog msgs to HOST:PORT via UDP\n",
            ovs_logdir(), program_name);
 }
+
+bool
+vlog_is_fd(int fd)
+{
+    if (fd == 2) {
+        return true;
+    }
+
+    ovs_rwlock_rdlock(&pattern_rwlock);
+    int sfd = syslog_fd;
+    ovs_rwlock_unlock(&pattern_rwlock);
+    if (fd == sfd) {
+        return true;
+    }
+
+    ovs_mutex_lock(&log_file_mutex);
+    if (log_writer && async_append_is_fd(log_writer, fd)) {
+        ovs_mutex_unlock(&log_file_mutex);
+        return true;
+    }
+    ovs_mutex_unlock(&log_file_mutex);
+
+    return false;
+}
